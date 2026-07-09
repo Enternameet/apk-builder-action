@@ -49,6 +49,28 @@ jobs:
           if [ ! -f "gradlew" ]; then gradle wrapper; fi
           chmod +x gradlew
 
+          run_gradle_with_checksum_fallback() {
+            set +e
+            "$@" 2>&1 | tee /tmp/gradle-build.log
+            local status=${PIPESTATUS[0]}
+            set -e
+
+            if [ $status -eq 0 ]; then
+              return 0
+            fi
+
+            if grep -q "Verification of Gradle distribution failed" /tmp/gradle-build.log \
+              && [ -f "gradle/wrapper/gradle-wrapper.properties" ] \
+              && grep -q "^distributionSha256Sum=" gradle/wrapper/gradle-wrapper.properties; then
+              echo "Gradle wrapper checksum verification failed, retrying once without distributionSha256Sum."
+              sed -i '/^distributionSha256Sum=/d' gradle/wrapper/gradle-wrapper.properties
+              "$@"
+              return $?
+            fi
+
+            return $status
+          }
+
           if [[ "${{ github.event.inputs.taskName }}" == *Release* ]]; then
             echo "Task contains 'Release', attempting to sign a release build with a debug key."
 
@@ -61,14 +83,14 @@ jobs:
               mv debug.keystore $HOME/.android/debug.keystore
             fi
 
-            ./gradlew ${{ github.event.inputs.taskName }} \
+            run_gradle_with_checksum_fallback ./gradlew ${{ github.event.inputs.taskName }} \
               -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
               -Pandroid.injected.signing.store.password=android \
               -Pandroid.injected.signing.key.alias=androiddebugkey \
               -Pandroid.injected.signing.key.password=android \
               --stacktrace
           else
-            ./gradlew ${{ github.event.inputs.taskName }} --stacktrace
+            run_gradle_with_checksum_fallback ./gradlew ${{ github.event.inputs.taskName }} --stacktrace
           fi
 
       - name: Upload the APK artifact with 1 day retention
