@@ -1,0 +1,140 @@
+name: 'APK Builder Action'
+description: 'Automates building debug/release APKs for Android repositories (public or private).'
+author: 'Nissan Ahmed'
+branding:
+  icon: 'box'
+  color: 'green'
+
+inputs:
+  repository:
+    description: 'Git repository URL'
+    required: true
+    default: 'https://github.com/android/sunflower'
+  authToken:
+    description: 'Personal Access Token (PAT) or Auth token for private repository [Optional]'
+    required: false
+    default: ''
+  branchName:
+    description: 'Git branch name [Optional]'
+    required: false
+    default: ''
+  subdir:
+    description: 'Relative subdirectory path when the project is nested [Optional]'
+    required: false
+    default: ''
+  jdkVersion:
+    description: 'OpenJDK version (recommended: 17 or 21)'
+    required: false
+    default: '21'
+  taskName:
+    description: 'build.gradle task name: assembleDebug, assembleRelease, etc.'
+    required: false
+    default: 'assembleRelease'
+  uploadArtifact:
+    description: 'Whether to upload the generated APK as a workflow artifact'
+    required: false
+    default: 'true'
+  retentionDays:
+    description: 'Retention days for uploaded artifact'
+    required: false
+    default: '1'
+
+outputs:
+  apk-path:
+    description: 'Path to the generated APK file'
+    value: ${{ steps.find-apk.outputs.apk_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup JDK
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: ${{ inputs.jdkVersion }}
+
+    - name: Clone project
+      shell: bash
+      env:
+        AUTH_TOKEN: ${{ inputs.authToken }}
+        REPO_URL: ${{ inputs.repository }}
+        BRANCH_NAME: ${{ inputs.branchName }}
+      run: |
+        if [ -n "$AUTH_TOKEN" ]; then
+          echo "::add-mask::$AUTH_TOKEN"
+          git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
+        fi
+
+        if [[ -z "$BRANCH_NAME" ]]; then
+          git clone --recurse-submodules --depth=1 "$REPO_URL" workspace
+        else
+          git clone --recurse-submodules --depth=1 --branch "$BRANCH_NAME" "$REPO_URL" workspace
+        fi
+
+    - name: Build APK
+      shell: bash
+      working-directory: ./workspace/${{ inputs.subdir }}
+      env:
+        TASK_NAME: ${{ inputs.taskName }}
+      run: |
+        if [ ! -f "gradlew" ]; then gradle wrapper; fi
+        chmod +x gradlew
+
+        run_gradle_with_checksum_fallback() {
+          set +e
+          "$@" 2>&1 | tee /tmp/gradle-build.log
+          local status=${PIPESTATUS[0]}
+          set -e
+
+          if [ $status -eq 0 ]; then
+            return 0
+          fi
+
+          if grep -q "Verification of Gradle distribution failed" /tmp/gradle-build.log \
+            && [ -f "gradle/wrapper/gradle-wrapper.properties" ] \
+            && grep -q "^distributionSha256Sum=" gradle/wrapper/gradle-wrapper.properties; then
+            echo "Gradle wrapper checksum verification failed, retrying once without distributionSha256Sum."
+            sed -i '/^distributionSha256Sum=/d' gradle/wrapper/gradle-wrapper.properties
+            "$@"
+            return $?
+          fi
+
+          return $status
+        }
+
+        if [[ "$TASK_NAME" == *Release* ]]; then
+          echo "Task contains 'Release', attempting to sign a release build with a debug key."
+
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            echo "Debug keystore not found. Creating one..."
+
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+
+            mkdir -p $HOME/.android
+            mv debug.keystore $HOME/.android/debug.keystore
+          fi
+
+          run_gradle_with_checksum_fallback ./gradlew "$TASK_NAME" \
+            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android \
+            --stacktrace
+        else
+          run_gradle_with_checksum_fallback ./gradlew "$TASK_NAME" --stacktrace
+        fi
+
+    - name: Locate APK output
+      id: find-apk
+      shell: bash
+      run: |
+        APK_FILE=$(find workspace -name "*.apk" | head -n 1)
+        echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+
+    - name: Upload APK artifact
+      if: ${{ inputs.uploadArtifact == 'true' }}
+      uses: actions/upload-artifact@v6
+      with:
+        path: workspace/**/*.apk
+        name: apk-archive
+        retention-days: ${{ inputs.retentionDays }}

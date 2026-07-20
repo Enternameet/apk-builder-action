@@ -1,5 +1,5 @@
 name: Build Android APK
-run-name: ${{ github.event.inputs.repository }} ${{ github.event.inputs.branchName && format('{0}', github.event.inputs.branchName) }} ${{ github.event.inputs.subdir && format('[/{0}]', github.event.inputs.subdir) }} :${{ github.event.inputs.taskName }}
+run-name: ${{ github.event.inputs.repository || inputs.repository }} ${{ (github.event.inputs.branchName || inputs.branchName) && format('{0}', github.event.inputs.branchName || inputs.branchName) }} ${{ (github.event.inputs.subdir || inputs.subdir) && format('[/{0}]', github.event.inputs.subdir || inputs.subdir) }} :${{ github.event.inputs.taskName || inputs.taskName }}
 
 on:
   workflow_dispatch:
@@ -8,6 +8,10 @@ on:
         description: "Git repository URL"
         required: true
         default: "https://github.com/android/sunflower"
+      authToken:
+        description: "Personal Access Token (PAT) / Auth token for private repository [Optional]"
+        required: false
+        default: ""
       branchName:
         description: "Git branch name [Optional]"
         required: false
@@ -24,78 +28,55 @@ on:
         description: "build.gradle task name: assembleDebug, assembleRelease, etc."
         required: false
         default: "assembleRelease"
+  workflow_call:
+    inputs:
+      repository:
+        description: "Git repository URL"
+        required: true
+        type: string
+      authToken:
+        description: "Personal Access Token (PAT) / Auth token for private repository [Optional]"
+        required: false
+        type: string
+        default: ""
+      branchName:
+        description: "Git branch name [Optional]"
+        required: false
+        type: string
+        default: ""
+      subdir:
+        description: "Relative subdirectory path when the project is nested [Optional]"
+        required: false
+        type: string
+        default: ""
+      jdkVersion:
+        description: "OpenJDK version (recommended: 17 or 21)"
+        required: false
+        type: string
+        default: "21"
+      taskName:
+        description: "build.gradle task name: assembleDebug, assembleRelease, etc."
+        required: false
+        type: string
+        default: "assembleRelease"
+    secrets:
+      authToken:
+        description: "Auth token as secret [Optional]"
+        required: false
 
 jobs:
   build:
     runs-on: ubuntu-latest # Android SDK is built into this image
     steps:
-      - name: Setup JDK
-        uses: actions/setup-java@v5
+      - name: Checkout Action Repository
+        uses: actions/checkout@v4
+
+      - name: Run APK Builder Action
+        uses: ./
         with:
-          distribution: "temurin"
-          java-version: ${{ github.event.inputs.jdkVersion }}
-
-      - name: Clone project
-        run: |
-          if [[ -z "${{ github.event.inputs.branchName }}" ]]; then
-            git clone --recurse-submodules --depth=1 ${{ github.event.inputs.repository }} workspace
-          else
-            git clone --recurse-submodules --depth=1 --branch ${{ github.event.inputs.branchName }} ${{ github.event.inputs.repository }} workspace
-          fi
-
-      - name: Build APK
-        working-directory: ./workspace/${{ github.event.inputs.subdir }}
-        run: |
-          if [ ! -f "gradlew" ]; then gradle wrapper; fi
-          chmod +x gradlew
-
-          run_gradle_with_checksum_fallback() {
-            set +e
-            "$@" 2>&1 | tee /tmp/gradle-build.log
-            local status=${PIPESTATUS[0]}
-            set -e
-
-            if [ $status -eq 0 ]; then
-              return 0
-            fi
-
-            if grep -q "Verification of Gradle distribution failed" /tmp/gradle-build.log \
-              && [ -f "gradle/wrapper/gradle-wrapper.properties" ] \
-              && grep -q "^distributionSha256Sum=" gradle/wrapper/gradle-wrapper.properties; then
-              echo "Gradle wrapper checksum verification failed, retrying once without distributionSha256Sum."
-              sed -i '/^distributionSha256Sum=/d' gradle/wrapper/gradle-wrapper.properties
-              "$@"
-              return $?
-            fi
-
-            return $status
-          }
-
-          if [[ "${{ github.event.inputs.taskName }}" == *Release* ]]; then
-            echo "Task contains 'Release', attempting to sign a release build with a debug key."
-
-            if [ ! -f "$HOME/.android/debug.keystore" ]; then
-              echo "Debug keystore not found. Creating one..."
-
-              keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
-
-              mkdir -p $HOME/.android
-              mv debug.keystore $HOME/.android/debug.keystore
-            fi
-
-            run_gradle_with_checksum_fallback ./gradlew ${{ github.event.inputs.taskName }} \
-              -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
-              -Pandroid.injected.signing.store.password=android \
-              -Pandroid.injected.signing.key.alias=androiddebugkey \
-              -Pandroid.injected.signing.key.password=android \
-              --stacktrace
-          else
-            run_gradle_with_checksum_fallback ./gradlew ${{ github.event.inputs.taskName }} --stacktrace
-          fi
-
-      - name: Upload the APK artifact with 1 day retention
-        uses: actions/upload-artifact@v6
-        with:
-          path: workspace/**/*.apk
-          name: apk-archive
-          retention-days: 1
+          repository: ${{ github.event.inputs.repository || inputs.repository }}
+          authToken: ${{ github.event.inputs.authToken || inputs.authToken || secrets.authToken }}
+          branchName: ${{ github.event.inputs.branchName || inputs.branchName }}
+          subdir: ${{ github.event.inputs.subdir || inputs.subdir }}
+          jdkVersion: ${{ github.event.inputs.jdkVersion || inputs.jdkVersion }}
+          taskName: ${{ github.event.inputs.taskName || inputs.taskName }}
