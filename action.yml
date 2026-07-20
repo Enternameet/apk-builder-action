@@ -60,16 +60,24 @@ runs:
         REPO_URL: ${{ inputs.repository }}
         BRANCH_NAME: ${{ inputs.branchName }}
       run: |
+        # Clear any existing extraheader set by actions/checkout (which carries default GITHUB_TOKEN)
+        git config --global --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+        git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+
         if [ -n "$AUTH_TOKEN" ]; then
           echo "::add-mask::$AUTH_TOKEN"
           if [[ "$AUTH_TOKEN" == *":"* ]]; then
+            B64_AUTH=$(printf "%s" "$AUTH_TOKEN" | base64 -w 0)
             git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
           else
+            B64_AUTH=$(printf "%s" "x-access-token:$AUTH_TOKEN" | base64 -w 0)
             git config --global url."https://x-access-token:${AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
             git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
           fi
+          git config --global http.https://github.com/.extraheader "AUTHORIZATION: basic $B64_AUTH"
         fi
 
+        rm -rf workspace
         if [[ -z "$BRANCH_NAME" ]]; then
           git clone --recurse-submodules --depth=1 "$REPO_URL" workspace
         else
@@ -138,7 +146,7 @@ runs:
 
     - name: Upload APK artifact
       if: ${{ inputs.uploadArtifact == 'true' }}
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v4
       with:
         path: workspace/**/*.apk
         name: apk-archive

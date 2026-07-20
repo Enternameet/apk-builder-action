@@ -70,6 +70,8 @@ jobs:
     steps:
       - name: Checkout Action Repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Run APK Builder Action
         uses: ./
