@@ -62,7 +62,12 @@ runs:
       run: |
         if [ -n "$AUTH_TOKEN" ]; then
           echo "::add-mask::$AUTH_TOKEN"
-          git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
+          if [[ "$AUTH_TOKEN" == *":"* ]]; then
+            git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
+          else
+            git config --global url."https://x-access-token:${AUTH_TOKEN}@github.com/".insteadOf "https://github.com/"
+            git config --global url."https://${AUTH_TOKEN}@".insteadOf "https://"
+          fi
         fi
 
         if [[ -z "$BRANCH_NAME" ]]; then
