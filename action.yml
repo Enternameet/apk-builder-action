@@ -103,9 +103,11 @@ runs:
         if [ ! -f "build.gradle" ] && [ ! -f "settings.gradle" ] && [ -f "package.json" ]; then
           echo "Detected a Node.js project. Installing dependencies..."
           if [ -f "yarn.lock" ]; then
-            npx yarn install
+            npx yarn install --frozen-lockfile
           elif [ -f "pnpm-lock.yaml" ]; then
-            npx pnpm install
+            npx pnpm install --frozen-lockfile
+          elif [ -f "package-lock.json" ]; then
+            npm ci
           else
             npm install
           fi
@@ -183,9 +185,9 @@ runs:
             -Pandroid.injected.signing.store.password=android \
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android \
-            --stacktrace
+            --stacktrace --no-daemon
         else
-          run_gradle_with_checksum_fallback ./gradlew "$TASK_NAME" --stacktrace
+          run_gradle_with_checksum_fallback ./gradlew "$TASK_NAME" --stacktrace --no-daemon
         fi
 
     - name: Locate APK output
