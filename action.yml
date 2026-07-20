@@ -195,12 +195,18 @@ runs:
       shell: bash
       run: |
         APK_FILE=$(find workspace -name "*.apk" | head -n 1)
-        echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+        if [ -z "$APK_FILE" ]; then
+          echo "Error: No APK file found in workspace"
+          exit 1
+        fi
+        APK_NAME=$(basename "$APK_FILE")
+        cp "$APK_FILE" "./$APK_NAME"
+        echo "apk_path=$APK_NAME" >> $GITHUB_OUTPUT
 
     - name: Upload APK artifact
       if: ${{ inputs.uploadArtifact == 'true' }}
       uses: actions/upload-artifact@v4
       with:
-        path: workspace/**/*.apk
+        path: ${{ steps.find-apk.outputs.apk_path }}
         name: apk-archive
         retention-days: ${{ inputs.retentionDays }}
