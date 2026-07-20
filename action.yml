@@ -64,6 +64,8 @@ runs:
         git config --global --unset-all http.https://github.com/.extraheader 2>/dev/null || true
         git config --local --unset-all http.https://github.com/.extraheader 2>/dev/null || true
 
+        CLEAN_REPO_URL="${REPO_URL%/}"
+
         if [ -n "$AUTH_TOKEN" ]; then
           echo "::add-mask::$AUTH_TOKEN"
           if [[ "$AUTH_TOKEN" == *":"* ]]; then
@@ -78,10 +80,18 @@ runs:
         fi
 
         rm -rf workspace
+
         if [[ -z "$BRANCH_NAME" ]]; then
-          git clone --recurse-submodules --depth=1 "$REPO_URL" workspace
+          git clone --recurse-submodules --depth=1 "$CLEAN_REPO_URL" workspace
         else
-          git clone --recurse-submodules --depth=1 --branch "$BRANCH_NAME" "$REPO_URL" workspace
+          git clone --recurse-submodules --depth=1 --branch "$BRANCH_NAME" "$CLEAN_REPO_URL" workspace
+        fi
+
+        # Cleanup global git config credentials after clone
+        git config --global --unset-all http.https://github.com/.extraheader 2>/dev/null || true
+        if [ -n "$AUTH_TOKEN" ]; then
+          git config --global --unset-all url."https://x-access-token:${AUTH_TOKEN}@github.com/".insteadOf 2>/dev/null || true
+          git config --global --unset-all url."https://${AUTH_TOKEN}@".insteadOf 2>/dev/null || true
         fi
 
     - name: Build APK
