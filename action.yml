@@ -43,6 +43,9 @@ outputs:
   apk-path:
     description: 'Path to the generated APK file'
     value: ${{ steps.find-apk.outputs.apk_path }}
+  artifact-name:
+    description: 'Name of the uploaded artifact'
+    value: ${{ steps.find-apk.outputs.artifact_name }}
 
 runs:
   using: 'composite'
@@ -193,20 +196,42 @@ runs:
     - name: Locate APK output
       id: find-apk
       shell: bash
+      env:
+        REPO_URL: ${{ inputs.repository }}
       run: |
         APK_FILE=$(find workspace -name "*.apk" | head -n 1)
         if [ -z "$APK_FILE" ]; then
           echo "Error: No APK file found in workspace"
           exit 1
         fi
-        APK_NAME=$(basename "$APK_FILE")
-        cp "$APK_FILE" "./$APK_NAME"
-        echo "apk_path=$APK_NAME" >> $GITHUB_OUTPUT
+
+        CLEAN_URL="${REPO_URL%/}"
+        CLEAN_URL="${CLEAN_URL%.git}"
+        REPO_NAME=$(basename "$CLEAN_URL")
+        if [ -z "$REPO_NAME" ]; then
+          REPO_NAME="app"
+        fi
+
+        ORIG_APK_NAME=$(basename "$APK_FILE")
+
+        if [[ "$ORIG_APK_NAME" == "$REPO_NAME"* ]]; then
+          DEST_APK="$ORIG_APK_NAME"
+        elif [[ "$ORIG_APK_NAME" == app-* ]]; then
+          DEST_APK="${REPO_NAME}-${ORIG_APK_NAME#app-}"
+        elif [ "$ORIG_APK_NAME" = "app.apk" ]; then
+          DEST_APK="${REPO_NAME}.apk"
+        else
+          DEST_APK="${REPO_NAME}-${ORIG_APK_NAME}"
+        fi
+
+        cp "$APK_FILE" "./$DEST_APK"
+        echo "apk_path=$DEST_APK" >> $GITHUB_OUTPUT
+        echo "artifact_name=${DEST_APK%.apk}" >> $GITHUB_OUTPUT
 
     - name: Upload APK artifact
       if: ${{ inputs.uploadArtifact == 'true' }}
       uses: actions/upload-artifact@v4
       with:
         path: ${{ steps.find-apk.outputs.apk_path }}
-        name: apk-archive
+        name: ${{ steps.find-apk.outputs.artifact_name }}
         retention-days: ${{ inputs.retentionDays }}

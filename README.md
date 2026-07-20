@@ -15,7 +15,7 @@ It natively supports both **Android repositories** and **Node.js Web Apps** (Rea
 3. Enter the Git repository URL of the Android project
 4. (Optional) Provide a **Personal Access Token (PAT)** or Auth Token if the repository is private
 5. Run the workflow and wait
-6. If the build is successful, the `apk-archive` artifact will appear at the bottom of the **Summary** tab (refresh the page if it does not). If the build fails, check the **build** logs under the **Jobs** section to determine the cause.
+6. If the build is successful, the generated artifact (dynamically named after the target repository, e.g. `sunflower-release`) will appear at the bottom of the **Summary** tab (refresh the page if it does not). If the build fails, check the **build** logs under the **Jobs** section to determine the cause.
 
 ### Option 2: Use as a GitHub Action in Your Workflow
 
