@@ -4,6 +4,7 @@ I've often wanted to test an app from an Android repository, but the developers 
 While we could always clone the source code and build it ourselves, that often means downloading gigabytes of dependencies for what's typically a one-time use.
 
 This GitHub action completely automates the _release_ or _debug_ APK building process, similar to a build server.
+It natively supports both **Android repositories** and **Node.js Web Apps** (React, Vue, Vite, etc.) by automatically wrapping them using [Capacitor](https://capacitorjs.com/) into a native Android application.
 
 ## Usage
 

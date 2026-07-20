@@ -94,12 +94,53 @@ runs:
           git config --global --unset-all url."https://${AUTH_TOKEN}@".insteadOf 2>/dev/null || true
         fi
 
+    - name: Convert Web App to Android (if applicable)
+      shell: bash
+      env:
+        SUBDIR: ${{ inputs.subdir }}
+      run: |
+        cd ./workspace/"$SUBDIR"
+        if [ ! -f "build.gradle" ] && [ ! -f "settings.gradle" ] && [ -f "package.json" ]; then
+          echo "Detected a Node.js project. Installing dependencies..."
+          if [ -f "yarn.lock" ]; then
+            npx yarn install
+          elif [ -f "pnpm-lock.yaml" ]; then
+            npx pnpm install
+          else
+            npm install
+          fi
+          
+          if [ ! -d "android" ]; then
+            echo "Auto-wrapping web app with Capacitor..."
+            npm run build --if-present
+            
+            WEB_DIR="www"
+            if [ -d "dist" ]; then WEB_DIR="dist"; fi
+            if [ -d "build" ]; then WEB_DIR="build"; fi
+            if [ -d "out" ]; then WEB_DIR="out"; fi
+            mkdir -p "$WEB_DIR"
+            
+            npm install @capacitor/core @capacitor/android
+            npm install -D @capacitor/cli
+            npx cap init "App" com.example.app --web-dir "$WEB_DIR"
+            npx cap add android
+            echo "Capacitor Android project generated."
+          else
+            echo "Existing 'android' directory found. Skipping Capacitor auto-wrap."
+          fi
+        fi
+
     - name: Build APK
       shell: bash
       working-directory: ./workspace/${{ inputs.subdir }}
       env:
         TASK_NAME: ${{ inputs.taskName }}
       run: |
+        if [ -d "android" ] && [ -f "android/build.gradle" ] && [ ! -f "build.gradle" ]; then
+          echo "Switching to 'android' directory for native build..."
+          cd android
+        fi
+        
         if [ ! -f "gradlew" ]; then gradle wrapper; fi
         chmod +x gradlew
 
