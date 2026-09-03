@@ -1,55 +1,108 @@
 # APK Builder GitHub Action
 
-I've often wanted to test an app from an Android repository, but the developers didn't provide a downloadable APK.
-While we could always clone the source code and build it ourselves, that often means downloading gigabytes of dependencies for what's typically a one-time use.
+Automate building **Release** or **Debug** APKs for Android and Compose Multiplatform repositories without requiring local Android SDK or Gradle dependencies.
 
-This GitHub action completely automates the _release_ or _debug_ APK building process, similar to a build server.
-It natively supports both **Android repositories** and **Node.js Web Apps** (React, Vue, Vite, etc.) by automatically wrapping them using [Capacitor](https://capacitorjs.com/) into a native Android application.
+This action acts as a universal cloud APK build server:
+- 🚀 **Gradle Caching**: Integrates `gradle/actions/setup-gradle@v4` for fast, cached builds.
+- 🧩 **Universal Project Detection**: Automatically detects Compose Multiplatform (`:composeApp`), standard Android (`:app`), and single-module projects.
+- 📦 **Multi-APK Discovery**: Accurately discovers and standardizes all valid APK outputs (including ABI splits), discarding test and unaligned files.
+- 🏷️ **GitHub Release Publishing**: Automatically creates GitHub Releases and attaches finished APKs as downloadable assets.
+- 🌐 **Web App Support**: Auto-wraps Node.js Web Apps (React, Vue, Vite, etc.) into native Android APKs via [Capacitor](https://capacitorjs.com/).
+- 🔒 **Private & Public Repos**: Full support for private repositories using GitHub tokens or Personal Access Tokens (PATs).
+
+---
 
 ## Usage
 
 ### Option 1: Manual Workflow Dispatch (Fork & Run)
 
-1. [Fork](https://github.com/ni554n/apk-builder-action/fork) this repo on GitHub
-2. Go to the [Build Android APK Workflow](/../../actions/workflows/build-apk.yaml) and select `Run workflow` dropdown menu
-3. Enter the Git repository URL of the Android project
-4. (Optional) Provide a **Personal Access Token (PAT)** or Auth Token if the repository is private
-5. Run the workflow and wait
-6. If the build is successful, the generated artifact (dynamically named after the target repository, e.g. `sunflower-release`) will appear at the bottom of the **Summary** tab (refresh the page if it does not). If the build fails, check the **build** logs under the **Jobs** section to determine the cause.
+1. [Fork](https://github.com/Enternameet/apk-builder-action/fork) this repository on GitHub.
+2. Go to the [Build Android APK Workflow](/../../actions/workflows/build-apk.yaml) and click **Run workflow**.
+3. Fill in the parameters:
+   - **Repository URL**: Git URL of the Android project (e.g. `https://github.com/Enternameet/komi-store`).
+   - **Branch Name**: Branch to clone (optional, defaults to repository default).
+   - **Publish to GitHub Releases**: Check to automatically create a release and attach the APK(s).
+4. Run the workflow. When finished:
+   - Generated APKs will appear as downloadable workflow artifacts under the **Summary** tab.
+   - If enabled, a new **GitHub Release** with direct APK download links will be published on your repository.
 
-### Option 2: Use as a GitHub Action in Your Workflow
+---
+
+### Option 2: Use in Your Own Workflow
 
 Include this action in any GitHub workflow:
 
 ```yaml
+name: Build and Release APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
 jobs:
-  build-apk:
+  build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required for publishing GitHub Releases
     steps:
       - name: Build Android APK
-        uses: ni554n/apk-builder-action@v1
+        uses: Enternameet/apk-builder-action@main
         with:
-          repository: 'https://github.com/your-org/your-android-app'
-          authToken: ${{ secrets.PAT_TOKEN }} # Required only for private repos
-          taskName: 'assembleRelease'
+          repository: 'https://github.com/Enternameet/komi-store'
+          branchName: 'fix/private-repo-downloads'
+          taskName: 'auto' # Smart auto-detects :composeApp:assembleRelease, :app, etc.
+          publishRelease: 'true'
+          releasePrerelease: 'true'
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-### Action Inputs
+To build a repository already checked out in your workflow (avoiding double-cloning):
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build APK from current repo
+        uses: Enternameet/apk-builder-action@main
+        with:
+          repository: '.'
+          taskName: 'auto'
+          uploadArtifact: 'true'
+```
+
+---
+
+## Action Inputs
 
 | Input | Description | Required | Default |
 |---|---|---|---|
-| `repository` | Git repository URL of the Android project | Yes | `https://github.com/android/sunflower` |
-| `authToken` | Personal Access Token (PAT) or auth token for private repos | No | `""` |
+| `repository` | Git repository URL, or `.` / `local` to build the current checked-out repo | Yes | `https://github.com/android/sunflower` |
+| `authToken` | Personal Access Token (PAT) or auth token for private repositories | No | `""` |
 | `branchName` | Specific branch to clone | No | `""` (default branch) |
-| `subdir` | Relative path if the Android project is nested | No | `""` |
-| `jdkVersion` | OpenJDK version (e.g. 17, 21) | No | `21` |
-| `taskName` | Gradle task (e.g. `assembleDebug`, `assembleRelease`) | No | `assembleRelease` |
-| `uploadArtifact` | Upload APK artifact to GitHub workflow run | No | `true` |
-| `retentionDays` | Artifact retention in days | No | `1` |
+| `subdir` | Relative subdirectory path if project is nested | No | `""` |
+| `jdkVersion` | OpenJDK version (`17` or `21`) | No | `21` |
+| `taskName` | Gradle task (e.g. `auto`, `assembleDebug`, `assembleRelease`, `:composeApp:assembleDebug`) | No | `auto` |
+| `uploadArtifact` | Upload APK artifact to GitHub Actions workflow run | No | `true` |
+| `retentionDays` | Artifact retention in days | No | `7` |
+| `publishRelease` | Publish generated APK(s) directly to a GitHub Release | No | `false` |
+| `releaseTag` | Custom tag name for GitHub release | No | Auto-generated |
+| `releaseTitle` | Custom title for GitHub release | No | Auto-generated |
+| `releasePrerelease` | Mark release as pre-release (`true`/`false`) | No | `true` |
+| `releaseDraft` | Mark release as draft (`true`/`false`) | No | `false` |
+| `githubToken` | Token with `contents: write` permissions for release creation | No | `${{ github.token }}` |
 
-## Information
+---
 
-**Author:** Nissan Ahmed ([@ni554n](https://x.com/ni554n))
+## Action Outputs
 
-**Website:** [anissan.com](https://anissan.com)
-<img src="https://ping.anissan.com/?repo=apk-builder-action" width="0" height="0" align="right">
+| Output | Description |
+|---|---|
+| `apk-path` | File path to the primary generated APK |
+| `apk-dir` | Directory path containing all generated APKs |
+| `artifact-name` | Name of the uploaded workflow artifact |
+| `release-url` | URL of the published GitHub release (if `publishRelease: true`) |
