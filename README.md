@@ -3,6 +3,7 @@
 Automate building **Release** or **Debug** APKs for Android and Compose Multiplatform repositories without requiring local Android SDK or Gradle dependencies.
 
 This action acts as a universal cloud APK build server:
+
 - 🚀 **Gradle Caching**: Integrates `gradle/actions/setup-gradle@v4` for fast, cached builds.
 - 🧩 **Universal Project Detection**: Automatically detects Compose Multiplatform (`:composeApp`), standard Android (`:app`), and single-module projects.
 - 📦 **Multi-APK Discovery**: Accurately discovers and standardizes all valid APK outputs (including ABI splits), discarding test and unaligned files.
@@ -80,8 +81,8 @@ jobs:
 ## Action Inputs
 
 | Input | Description | Required | Default |
-|---|---|---|---|
-| `repository` | Git repository URL, or `.` / `local` to build the current checked-out repo | Yes | `https://github.com/android/sunflower` |
+| --- | --- | --- | --- |
+| `repository` | Git repository URL, or `.` / `local` to build the current checked-out repo | Yes | `""` |
 | `authToken` | Personal Access Token (PAT) or auth token for private repositories | No | `""` |
 | `branchName` | Specific branch to clone | No | `""` (default branch) |
 | `subdir` | Relative subdirectory path if project is nested | No | `""` |
@@ -101,7 +102,7 @@ jobs:
 ## Action Outputs
 
 | Output | Description |
-|---|---|
+| --- | --- |
 | `apk-path` | File path to the primary generated APK |
 | `apk-dir` | Directory path containing all generated APKs |
 | `artifact-name` | Name of the uploaded workflow artifact |
