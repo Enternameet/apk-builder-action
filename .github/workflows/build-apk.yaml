@@ -6,7 +6,7 @@ on:
       repository:
         description: "Git repository URL (or '.' to build current repo)"
         required: true
-        default: "https://github.com/android/sunflower"
+        default: ""
       authToken:
         description: "Personal Access Token (PAT) / Auth token for private repository [Optional]"
         required: false
