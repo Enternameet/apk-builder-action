@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       repository:
-        description: "Git repository URL"
+        description: "Git repository URL (or '.' to build current repo)"
         required: true
         default: "https://github.com/android/sunflower"
       authToken:
@@ -24,9 +24,18 @@ on:
         required: false
         default: "21"
       taskName:
-        description: "build.gradle task name: assembleDebug, assembleRelease, etc."
+        description: "build.gradle task name: auto, assembleDebug, assembleRelease, etc."
         required: false
-        default: "assembleRelease"
+        default: "auto"
+      publishRelease:
+        description: "Publish generated APK(s) to GitHub Releases"
+        required: false
+        type: boolean
+        default: false
+      releaseTag:
+        description: "Custom release tag name [Optional]"
+        required: false
+        default: ""
   workflow_call:
     inputs:
       repository:
@@ -54,22 +63,39 @@ on:
         type: string
         default: "21"
       taskName:
-        description: "build.gradle task name: assembleDebug, assembleRelease, etc."
+        description: "build.gradle task name: auto, assembleDebug, assembleRelease, etc."
         required: false
         type: string
-        default: "assembleRelease"
+        default: "auto"
+      publishRelease:
+        description: "Publish generated APK(s) to GitHub Releases"
+        required: false
+        type: boolean
+        default: false
+      releaseTag:
+        description: "Custom release tag name [Optional]"
+        required: false
+        type: string
+        default: ""
     secrets:
       authToken:
         description: "Auth token as secret [Optional]"
         required: false
+      releaseToken:
+        description: "GitHub token for release creation [Optional]"
+        required: false
+
 jobs:
   build:
-    runs-on: ubuntu-latest # Android SDK is built into this image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Action Repository
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+
       - name: Run APK Builder Action
         uses: ./
         with:
@@ -79,3 +105,6 @@ jobs:
           subdir: ${{ github.event.inputs.subdir || inputs.subdir }}
           jdkVersion: ${{ github.event.inputs.jdkVersion || inputs.jdkVersion }}
           taskName: ${{ github.event.inputs.taskName || inputs.taskName }}
+          publishRelease: ${{ github.event.inputs.publishRelease || inputs.publishRelease || 'false' }}
+          releaseTag: ${{ github.event.inputs.releaseTag || inputs.releaseTag }}
+          githubToken: ${{ secrets.releaseToken || secrets.GITHUB_TOKEN }}
