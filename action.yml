@@ -214,6 +214,43 @@ runs:
           return $status
         }
 
+        setup_release_signing_if_needed() {
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            echo "Generating debug keystore for release signing..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+            mkdir -p "$HOME/.android"
+            mv debug.keystore "$HOME/.android/debug.keystore"
+          fi
+        }
+
+        run_resolved_task() {
+          local task_name="$1"
+          echo "Executing Gradle task: $task_name"
+
+          if [[ "$task_name" == *Release* ]]; then
+            echo "Release task detected. Setting up signing key..."
+            setup_release_signing_if_needed
+            run_gradle_with_checksum_fallback ./gradlew "$task_name" \
+              -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
+              -Pandroid.injected.signing.store.****** \
+              -Pandroid.injected.signing.key.alias=androiddebugkey \
+              -Pandroid.injected.signing.key.****** \
+              --stacktrace --no-daemon
+          else
+            run_gradle_with_checksum_fallback ./gradlew "$task_name" --stacktrace --no-daemon
+          fi
+        }
+
+        add_task_candidate() {
+          local candidate="$1"
+          for existing in "${TASK_CANDIDATES[@]}"; do
+            if [ "$existing" = "$candidate" ]; then
+              return 0
+            fi
+          done
+          TASK_CANDIDATES+=("$candidate")
+        }
+
         # Resolve Gradle task (auto-detection if requested or blank)
         RESOLVED_TASK="$TASK_INPUT"
         if [ -z "$RESOLVED_TASK" ] || [ "$RESOLVED_TASK" = "auto" ]; then
@@ -222,43 +259,38 @@ runs:
           if [ -f "settings.gradle.kts" ]; then SETTINGS_FILE="settings.gradle.kts"; fi
           if [ -f "settings.gradle" ]; then SETTINGS_FILE="settings.gradle"; fi
 
-          if [ -n "$SETTINGS_FILE" ] && grep -q "composeApp" "$SETTINGS_FILE"; then
-            RESOLVED_TASK=":composeApp:assembleRelease"
-            echo "Detected Compose Multiplatform app module (:composeApp). Target: $RESOLVED_TASK"
-          elif [ -n "$SETTINGS_FILE" ] && grep -q ":app" "$SETTINGS_FILE"; then
-            RESOLVED_TASK=":app:assembleRelease"
-            echo "Detected standard Android app module (:app). Target: $RESOLVED_TASK"
-          elif [ -d "composeApp" ]; then
-            RESOLVED_TASK=":composeApp:assembleRelease"
-            echo "Found composeApp directory. Target: $RESOLVED_TASK"
+          TASK_CANDIDATES=()
+          add_task_candidate "assembleRelease"
+
+          if [ -n "$SETTINGS_FILE" ] && grep -q ":app" "$SETTINGS_FILE"; then
+            add_task_candidate ":app:assembleRelease"
           elif [ -d "app" ]; then
-            RESOLVED_TASK=":app:assembleRelease"
-            echo "Found app directory. Target: $RESOLVED_TASK"
-          else
-            RESOLVED_TASK="assembleRelease"
-            echo "Falling back to generic task: $RESOLVED_TASK"
-          fi
-        fi
-
-        echo "Executing Gradle task: $RESOLVED_TASK"
-
-        if [[ "$RESOLVED_TASK" == *Release* ]]; then
-          echo "Release task detected. Setting up signing key..."
-          if [ ! -f "$HOME/.android/debug.keystore" ]; then
-            echo "Generating debug keystore for release signing..."
-            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
-            mkdir -p "$HOME/.android"
-            mv debug.keystore "$HOME/.android/debug.keystore"
+            add_task_candidate ":app:assembleRelease"
           fi
 
-          run_gradle_with_checksum_fallback ./gradlew $RESOLVED_TASK \
-            -Pandroid.injected.signing.store.file="$HOME/.android/debug.keystore" \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=androiddebugkey \
-            -Pandroid.injected.signing.key.password=android \
-            --stacktrace --no-daemon
+          if [ -n "$SETTINGS_FILE" ] && grep -q "composeApp" "$SETTINGS_FILE"; then
+            add_task_candidate ":composeApp:assembleRelease"
+          elif [ -d "composeApp" ]; then
+            add_task_candidate ":composeApp:assembleRelease"
+          fi
+
+          BUILD_SUCCEEDED=false
+          for candidate_task in "${TASK_CANDIDATES[@]}"; do
+            echo "Trying auto-detected task candidate: $candidate_task"
+            if run_resolved_task "$candidate_task"; then
+              RESOLVED_TASK="$candidate_task"
+              BUILD_SUCCEEDED=true
+              break
+            fi
+            echo "::warning::Gradle task '$candidate_task' failed. Trying next candidate..."
+          done
+
+          if [ "$BUILD_SUCCEEDED" != "true" ]; then
+            echo "::error::All auto-detected Gradle task candidates failed."
+            exit 1
+          fi
         else
-          run_gradle_with_checksum_fallback ./gradlew $RESOLVED_TASK --stacktrace --no-daemon
+          run_resolved_task "$RESOLVED_TASK"
         fi
 
     - name: Locate and Stage APKs
